@@ -1,0 +1,13 @@
+node_modules/
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+# exported persona libraries / local test artefacts
+dsh-persona.json
+dsh-persona-images/
+dsh-characards-*.json
+*.chara_card_v3.json

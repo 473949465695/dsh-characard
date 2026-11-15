@@ -1,0 +1,46 @@
+{
+  "name": "dsh-characard",
+  "version": "1.6.1",
+  "private": true,
+  "description": "Character cards in DSH Settings: paged frames, one photo each, Tavern card import/export, one card active at a time.",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "persona",
+    "character-card",
+    "sillytavern",
+    "chara_card_v3"
+  ],
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/473949465695/dsh-characard.git"
+  },
+  "homepage": "https://github.com/473949465695/dsh-characard",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}
