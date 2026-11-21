@@ -288,6 +288,8 @@ function personas(state) {
   const text = promptText(loud);
   assert.match(text, /思考方式/);
   assert.match(text, /第一人称/);
+  assert.match(text, /思考的语言跟用户的语言一致/, "the section pins the thinking language");
+  assert.match(text, /叙述和独白本身不许整段换成英文/);
   // The switch must not disturb the ordinary blocks.
   for (const fragment of ["个人简介", "说话风格", "保持第一人称"]) {
     assert.ok(text.includes(fragment), `switch broke ${fragment}`);
@@ -317,11 +319,13 @@ function personas(state) {
   assert.ok(text.includes("薇拉"), "the reminder names the persona");
   assert.match(text, /reasoning/);
   assert.match(text, /第一人称/);
+  assert.match(text, /思考用中文写/, "the reminder pins the thinking language");
+  assert.match(text, /不要整段英文思考/);
+  // It rides with every request, so it has to stay short even with the language line.
+  assert.ok(text.length < 460, `the reminder must stay small, got ${text.length}`);
   // The gateway recognises injected user turns by this prefix, so it must lead.
   assert.ok(text.startsWith("<system-reminder>"), "the notice wears the reminder marker");
   assert.ok(text.trimEnd().endsWith("</system-reminder>"));
-  // It rides with every request, so it has to stay short.
-  assert.ok(text.length < 400, `the reminder must stay small, got ${text.length}`);
 
   // No active persona, or one with no prose, says nothing even with the switch on.
   assert.equal(thinkingReminder(normalizeState({ version: 3, activeId: null, personas: [{ id: "a", thinking: true }] })), "");
