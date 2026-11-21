@@ -503,11 +503,31 @@ function frames(root) {
   const editorPhotoInputs = collect(root, (node) => node.kind === "host" && node.type === "input" && node.props.type === "file" && node.props.accept && node.props.accept.startsWith("image/"));
   assert.equal(editorPhotoInputs.length, 0, "the editor does not own the frame photo");
 
-  // back to the board
-  click(button(root, "返回"));
+  // the thinking switch lives in the editor and waits for the save call
+  const switchBox = collect(root, (node) => hasClass(node, "dshp-switch"))[0];
+  assert.ok(switchBox, "the editor offers the thinking switch");
+  assert.match(textOf(switchBox), /思考也用这个口吻/);
+  const switchInput = collect(switchBox, (node) => node.kind === "host" && node.type === "input" && node.props.type === "checkbox")[0];
+  assert.ok(switchInput, "the switch is a checkbox");
+  assert.equal(switchInput.props.checked, false, "thinking starts off");
+  const callsBeforeSwitch = harness.fetchCalls.length;
+  switchInput.props.onChange({ target: { checked: true } });
   await harness.settle();
   root = harness.getRoot();
+  const switchAfter = collect(root, (node) => hasClass(node, "dshp-switch"))[0];
+  const switchInputAfter = collect(switchAfter, (node) => node.kind === "host" && node.props && node.props.type === "checkbox")[0];
+  assert.equal(switchInputAfter.props.checked, true, "the switch flips locally");
+  assert.equal(harness.fetchCalls.length, callsBeforeSwitch, "flipping the switch does not call the bridge on its own");
+  assert.match(switchAfter.props.className, /dshp-switch-on/);
+
+  // saving carries the switch to the host and tags the frame
+  click(button(root, "保存"));
+  await harness.settle();
+  assert.equal(harness.getLibrary().personas[0].thinking, true, "the save stored the switch");
+  assert.equal(harness.getLibrary().personas[1].thinking, undefined, "the other persona is untouched");
+  root = harness.getRoot();
   assert.equal(frames(root).length, 4);
+  assert.match(allText(root), /思考·人设/);
 
   // switch the active character from the editor toggle
   click(button(root, "编辑"));

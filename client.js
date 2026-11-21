@@ -78,6 +78,9 @@ window.__ModuleLoader__.load({
       rules: "必须遵守",
       rulesPh: "一、……\n二、……",
       enabledLabel: "启用此人设",
+      thinkingLabel: "思考也用这个口吻",
+      thinkingHint: "打开后，模型思考（reasoning）里的独白也换成这个人——第一人称、同样的语气词和句尾。只是提示词层面的要求，模型偶尔会跑回原来的调子。",
+      thinkingBadge: "思考·人设",
       counterUnit: " 字",
       importedPrefix: "已导入 ",
       importedSuffix: " 个人设。",
@@ -155,6 +158,9 @@ window.__ModuleLoader__.load({
       rules: "Rules",
       rulesPh: "1. …\n2. …",
       enabledLabel: "Active",
+      thinkingLabel: "In-character thinking",
+      thinkingHint: "When on, the model's reasoning monologue uses this character too: first person, the same particles and sentence endings. Prompt-level only — it may slip back now and then.",
+      thinkingBadge: "thinking",
       counterUnit: " chars",
       importedPrefix: "Imported ",
       importedSuffix: " persona(s).",
@@ -232,6 +238,13 @@ window.__ModuleLoader__.load({
 .dshp-hint { margin: 8px 0 0; font-size: 12px; color: var(--dsw-alias-label-secondary, #6b6b6b); }
 .dshp-hint-inline { margin: 4px 0 0; font-size: 12px; color: var(--dsw-alias-label-secondary, #6b6b6b); }
 .dshp-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+.dshp-switch { display: flex; gap: 10px; align-items: flex-start; margin: 2px 0 16px; padding: 10px 12px; border: 1px solid var(--dsw-alias-border-l1, #d9d9d9); border-radius: 10px; background: var(--dsw-alias-bg-layer-1, #fafafa); cursor: pointer; }
+.dshp-switch-on { border-color: var(--dsw-alias-brand-primary, #4d6bfe); background: var(--dsw-alias-bg-layer-2, #ffffff); }
+.dshp-switch-input { margin: 3px 0 0; flex-shrink: 0; }
+.dshp-switch-body { display: flex; flex-direction: column; gap: 2px; }
+.dshp-switch-title { font-weight: 600; }
+.dshp-switch-hint { font-size: 12px; color: var(--dsw-alias-label-secondary, #6b6b6b); }
+.dshp-frame-tag { flex-shrink: 0; font-size: 11px; line-height: 16px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2, #c9c9c9); color: var(--dsw-alias-label-secondary, #6b6b6b); }
 .dshp-msg { margin: 12px 0 0; }
 .dshp-msg-ok { color: var(--dsw-alias-state-success-primary, #2e9e5b); }
 .dshp-msg-error { color: var(--dsw-alias-state-error-primary, #d03050); }
@@ -286,13 +299,26 @@ window.__ModuleLoader__.load({
     }
 
     function emptyForm() {
-      return { name: "", bio: "", likes: "", relations: "", appearance: "", userRelation: "", specialty: "", style: "", rules: "" };
+      return {
+        name: "",
+        bio: "",
+        likes: "",
+        relations: "",
+        appearance: "",
+        userRelation: "",
+        specialty: "",
+        style: "",
+        rules: "",
+        thinking: false,
+      };
     }
 
     function formOf(persona) {
       if (!persona) return emptyForm();
       const next = emptyForm();
-      for (const key of Object.keys(next)) next[key] = persona[key] || "";
+      for (const key of Object.keys(next)) {
+        next[key] = key === "thinking" ? persona.thinking === true : persona[key] || "";
+      }
       return next;
     }
 
@@ -370,6 +396,7 @@ window.__ModuleLoader__.load({
           "div",
           { className: "dshp-frame-body" },
           h("span", { className: "dshp-frame-name" }, persona.name || t("untitled")),
+          persona.thinking ? h("span", { className: "dshp-frame-tag", title: t("thinkingLabel") }, t("thinkingBadge")) : null,
           h(
             "div",
             { className: "dshp-frame-actions" },
@@ -414,6 +441,29 @@ window.__ModuleLoader__.load({
           : null,
       );
 
+      // The thinking switch rides along with the save call: it is a per-persona
+      // setting, not something that needs its own request.
+      const thinkingBox = h(
+        "label",
+        { className: form.thinking ? "dshp-switch dshp-switch-on" : "dshp-switch" },
+        h("input", {
+          className: "dshp-switch-input",
+          type: "checkbox",
+          checked: Boolean(form.thinking),
+          disabled: busy,
+          onChange: (event) => {
+            const checked = event.target.checked;
+            setForm((current) => ({ ...current, thinking: checked }));
+          },
+        }),
+        h(
+          "span",
+          { className: "dshp-switch-body" },
+          h("span", { className: "dshp-switch-title" }, t("thinkingLabel")),
+          h("span", { className: "dshp-switch-hint" }, t("thinkingHint")),
+        ),
+      );
+
       const textarea = (key, rows, placeholderKey) =>
         h("textarea", {
           className: "dshp-textarea",
@@ -442,6 +492,7 @@ window.__ModuleLoader__.load({
         field(t, "specialty", count(t, form.specialty.length, MAX.specialty), textarea("specialty", 2, "specialtyPh"), "specialtyHint"),
         field(t, "style", count(t, form.style.length, MAX.style), textarea("style", 3, "stylePh")),
         field(t, "rules", count(t, form.rules.length, MAX.rules), textarea("rules", 5, "rulesPh")),
+        thinkingBox,
         h(
           "div",
           { className: "dshp-actions" },

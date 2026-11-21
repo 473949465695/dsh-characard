@@ -1,8 +1,8 @@
 {
   "name": "dsh-characard",
-  "version": "1.6.1",
+  "version": "1.8.0",
   "private": true,
-  "description": "Character cards in DSH Settings: paged frames, one photo each, Tavern card import/export, one card active at a time.",
+  "description": "Character cards in DSH Settings: paged frames, one photo each, Tavern card import/export, one card active at a time, optional in-character thinking.",
   "license": "MIT",
   "keywords": [
     "dsh",

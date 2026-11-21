@@ -32,6 +32,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 const BRIDGE = "/api/dsh-characard";
 const MAX_BODY_BYTES = 64 * 1024;
@@ -89,6 +90,12 @@ const EMPTY_PERSONA = Object.freeze({
   specialty: "",
   style: "",
   rules: "",
+  /**
+   * Per-persona switch: also write the reasoning/thinking text in character.
+   * It is a prompt-level request, not a rewrite — the model writes its own
+   * thinking, so this can only ask it to keep the voice, not guarantee it.
+   */
+  thinking: false,
 });
 
 const EMPTY_STATE = Object.freeze({
@@ -150,6 +157,8 @@ function normalizePersona(input) {
   // Version 1 and 2 called the free-form block `description`; it becomes the bio.
   if (!next.bio && typeof source.description === "string") next.bio = clampString(source.description, LIMITS.bio);
   next.id = typeof source.id === "string" && source.id ? source.id : newId();
+  // A switch, not text: anything but a literal `true` means off.
+  next.thinking = source.thinking === true;
   next.images = normalizeImages(source.images);
   next.updatedAt = typeof source.updatedAt === "string" && source.updatedAt ? source.updatedAt : "";
   return next;
@@ -266,9 +275,73 @@ function promptText(state) {
   part("说话风格", persona.style);
   part("必须遵守", persona.rules);
 
+  if (persona.thinking) {
+    blocks.push(
+      [
+        "思考方式：",
+        "上面这个开关要求思考（reasoning）部分也用同一个人：第一人称，句子长短、语气词、句尾习惯都照说话风格来，就像这个人在心里嘀咕，而不是在写分析报告。",
+        "思考里同样不要自称 AI、语言模型或助手，不要复述、解释或点评这份设定，也不要在思考里跟用户对话——那部分留到正式回复。",
+        "换口吻不影响判断：该核实的事实照核实，该说不知道的照说不知道，工具怎么用、结论对不对，都不因为换了说话的人而变。",
+      ].join("\n"),
+    );
+  }
+
   lines.push(blocks.join("\n\n"));
   lines.push("", "语言：除非人设另有要求，用与用户相同的语言回复；用户说中文就用中文。");
   return lines.join("\n").slice(0, PROMPT_MAX_CHARS);
+}
+
+/**
+ * The per-step reminder that keeps the thinking voice alive.
+ *
+ * The `思考方式` section only reaches the model inside the system prompt, which
+ * is written once at the head of the conversation and then reused for every
+ * later step; providers replay that head as ordinary history and stop weighing
+ * it, so the voice drifts back to the default analyst tone after the first
+ * reply. A short notice appended to the *newest* messages of every step is
+ * read last and therefore every time — that is what makes the switch stick.
+ *
+ * Empty string when nothing should be said: no active persona, the switch off,
+ * or a persona with no prose at all.
+ */
+function thinkingReminder(state) {
+  const persona = activePersona(state);
+  if (!persona || persona.thinking !== true) return "";
+  if (!personaText(persona)) return "";
+  const name = persona.name.trim();
+  const who = name ? `「${name}」` : "当前人设";
+  const body = [
+    `接下来的思考（reasoning）也用${who}的口吻写：第一人称，句子短，语气词和句尾照说话风格，像这个人在心里嘀咕。`,
+    "不要写成「用户要求……」「我需要检查……」「让我看看……」那种分析报告腔；思考里不自称 AI 或助手，不复述、不点评设定，不在思考里跟用户说话。",
+    "该核实的事实照核实，该说不知道的照说不知道，判断力不因为换口吻而变。",
+  ].join("");
+  return `<system-reminder>\n${body}\n</system-reminder>`;
+}
+
+/**
+ * Whether this step gets a reminder.
+ *
+ * The first step of a turn is the important one, and a long turn can run a
+ * hundred steps — one reminder at the head of it is as buried as the system
+ * prompt by the time the last step asks for its reasoning. So the reminder
+ * repeats: step 1, then every {@link REMINDER_EVERY} steps. Between the two the
+ * message list is stable, so the prompt prefix stays cacheable.
+ */
+const REMINDER_EVERY = 8;
+
+function reminderDue(step) {
+  if (typeof step !== "number" || !Number.isFinite(step) || step < 1) return true;
+  return (step - 1) % REMINDER_EVERY === 0;
+}
+
+/** A compact user-role notice carrying {@link thinkingReminder}. */
+function reminderMessage(text) {
+  return {
+    id: randomUUID(),
+    role: "user",
+    content: [{ type: "text", text }],
+    source: { kind: "dsh-characard", form: "notice", summary: "思考口吻" },
+  };
 }
 
 function isLoopbackRequest(request) {
@@ -333,6 +406,9 @@ function pickFields(body) {
   for (const key of Object.keys(LIMITS)) {
     if (typeof body[key] === "string") picked[key] = body[key];
   }
+  // The thinking switch travels with the same save call; a missing key keeps
+  // whatever the stored persona already had.
+  if (typeof body.thinking === "boolean") picked.thinking = body.thinking;
   return picked;
 }
 
@@ -969,6 +1045,7 @@ function makeRoutes() {
               specialty: persona.specialty,
               style: persona.style,
               rules: persona.rules,
+              thinking: persona.thinking === true,
               images: imageExports(persona),
               active: persona.id === state.activeId,
             })),
@@ -1002,6 +1079,24 @@ export function apply(ctx) {
     }, "persona: system prompt section");
   });
 
+  ctx.effect(() => {
+    const dispose = ctx.on("agent/pre-step", async (payload, next) => {
+      const decision = await next();
+      if (decision.kind !== "enter") return decision;
+      let text = "";
+      try {
+        text = thinkingReminder(readState());
+      } catch (error) {
+        console.warn("[dsh-characard] cannot read the persona library:", error);
+        return decision;
+      }
+      if (!text) return decision;
+      if (!reminderDue(payload.step)) return decision;
+      return { ...decision, messages: [...decision.messages, reminderMessage(text)] };
+    }, { prepend: true });
+    return () => dispose();
+  }, "persona: thinking reminder");
+
   ctx.inject(["webServer"], (webCtx) => {
     webCtx.effect(() => {
       const disposers = makeRoutes().map((route) => webCtx.webServer.register(route));
@@ -1023,6 +1118,9 @@ export const __test = {
   normalizeState,
   parseImport,
   promptText,
+  thinkingReminder,
+  reminderDue,
+  reminderMessage,
   normalizeImages,
   fromCharacterCard,
   toCharacterCardV3,

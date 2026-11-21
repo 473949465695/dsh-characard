@@ -276,4 +276,79 @@ function personas(state) {
   assert.ok(toCharacterCardV3({ ...persona, name: "" }).data.name.length > 0);
 }
 
+// --- the thinking switch: off says nothing extra, on asks for the voice.
+{
+  const base = { version: 3, activeId: "a", personas: [{ id: "a", name: "薇拉", bio: "开旧书店的吸血鬼", style: "懒散，语气词多" }] };
+  const quiet = promptText(normalizeState(base));
+  assert.doesNotMatch(quiet, /思考方式/);
+  assert.doesNotMatch(quiet, /reasoning/);
+
+  const loud = normalizeState({ ...base, personas: [{ ...base.personas[0], thinking: true }] });
+  assert.equal(loud.personas[0].thinking, true);
+  const text = promptText(loud);
+  assert.match(text, /思考方式/);
+  assert.match(text, /第一人称/);
+  // The switch must not disturb the ordinary blocks.
+  for (const fragment of ["个人简介", "说话风格", "保持第一人称"]) {
+    assert.ok(text.includes(fragment), `switch broke ${fragment}`);
+  }
+  assert.ok(text.indexOf("思考方式") > text.indexOf("说话风格"), "the switch block comes after the voice block");
+
+  // Only a literal true counts; strings and other junk stay off.
+  for (const junk of [undefined, false, "true", 1, null, {}]) {
+    const state = normalizeState({ ...base, personas: [{ ...base.personas[0], thinking: junk }] });
+    assert.equal(state.personas[0].thinking, false, `thinking ${String(junk)} should be off`);
+    assert.doesNotMatch(promptText(state), /思考方式/);
+  }
+  // A plain switch alone must not conjure a persona block out of nothing.
+  const blank = normalizeState({ version: 3, activeId: "a", personas: [{ id: "a", name: "甲", thinking: true }] });
+  assert.equal(promptText(blank), "");
+}
+
+// --- the per-step reminder: same switch, but read at the tail of every request.
+{
+  const { thinkingReminder } = __test;
+  const base = { version: 3, activeId: "a", personas: [{ id: "a", name: "薇拉", bio: "开旧书店的吸血鬼" }] };
+  assert.equal(thinkingReminder(normalizeState(base)), "");
+
+  const loud = normalizeState({ ...base, personas: [{ ...base.personas[0], thinking: true }] });
+  const text = thinkingReminder(loud);
+  assert.ok(text.length > 0, "an enabled switch must produce a reminder");
+  assert.ok(text.includes("薇拉"), "the reminder names the persona");
+  assert.match(text, /reasoning/);
+  assert.match(text, /第一人称/);
+  // The gateway recognises injected user turns by this prefix, so it must lead.
+  assert.ok(text.startsWith("<system-reminder>"), "the notice wears the reminder marker");
+  assert.ok(text.trimEnd().endsWith("</system-reminder>"));
+  // It rides with every request, so it has to stay short.
+  assert.ok(text.length < 400, `the reminder must stay small, got ${text.length}`);
+
+  // No active persona, or one with no prose, says nothing even with the switch on.
+  assert.equal(thinkingReminder(normalizeState({ version: 3, activeId: null, personas: [{ id: "a", thinking: true }] })), "");
+  assert.equal(thinkingReminder(normalizeState({ version: 3, activeId: "a", personas: [{ id: "a", name: "甲", thinking: true }] })), "");
+
+  // An unnamed persona still gets a reminder, just without the name.
+  const anon = thinkingReminder(normalizeState({ version: 3, activeId: "a", personas: [{ id: "a", bio: "无名的家伙", thinking: true }] }));
+  assert.ok(anon.length > 0);
+  assert.ok(anon.includes("当前人设"), "an unnamed persona falls back to a generic label");
+}
+
+// --- when the reminder lands: a long turn must not bury it after step 1.
+{
+  const { reminderDue } = __test;
+  assert.equal(reminderDue(1), true, "the first step always gets one");
+  assert.equal(reminderDue(2), false);
+  assert.equal(reminderDue(8), false);
+  assert.equal(reminderDue(9), true, "the cadence repeats");
+  assert.equal(reminderDue(17), true);
+  assert.equal(reminderDue(undefined), true, "a payload without a step still reminds");
+  assert.equal(reminderDue(0), true);
+  assert.equal(reminderDue(Number.NaN), true);
+
+  // Never twice in a row.
+  for (let step = 1; step <= 40; step += 1) {
+    if (reminderDue(step)) assert.ok(step === 1 || reminderDue(step - 1) === false);
+  }
+}
+
 console.log("state smoke ok");
