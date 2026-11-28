@@ -1,0 +1,21 @@
+{
+  "name": "dsh-characard",
+  "displayName": "人设 / Persona",
+  "version": "2.0.0",
+  "description": "角色卡人设管理插件：2×2 分页角色框、角色照片、Tavern V1/V2/V3 角色卡导入导出、单人设即时切换与可选「思考也用这个口吻」。",
+  "logo": "assets/logo.svg",
+  "author": {
+    "name": "473949465695",
+    "url": "https://github.com/473949465695"
+  },
+  "homepage": "https://github.com/473949465695/dsh-characard",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/473949465695/dsh-characard.git"
+  },
+  "suggestedPrompts": [
+    "打开人设角色卡面板，管理我的角色",
+    "列出当前已保存的人设并告诉我现在启用的是哪一个",
+    "帮我切换或关闭当前启用的人设"
+  ]
+}

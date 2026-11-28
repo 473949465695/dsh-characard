@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "characard": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/antigravity/mcp-server.mjs"],
+      "env": {
+        "CHARACARD_PLUGIN_DATA": "${PLUGIN_DATA}"
+      }
+    }
+  }
+}

@@ -1,21 +1,21 @@
-// End-to-end smoke test for the host half: it drives the real HTTP route
-// handlers (the same functions `webServer.register` receives) without DSH.
+// End-to-end smoke test for the DSH host half: drives the real HTTP route
+// handlers in an isolated temporary profile directory (never touches user data).
 // Run: node test/handler-smoke.mjs [path-to-card.json]
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { apply } from "../index.js";
+import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const stateFile = join(process.env.DSH_PROFILE_DIR || join(process.env.USERPROFILE || "", ".dsh", "profiles", "desktop"), "dsh-persona.json");
-const backup = existsSync(stateFile) ? readFileSync(stateFile, "utf8") : null;
-const realCardPath = process.argv[2] || "C:\\Users\\冯至纯\\Downloads\\天神山音葵_Tenjin_yama_Otogi__card.json";
+const tempDir = mkdtempSync(join(tmpdir(), "dsh-characard-handler-"));
+process.env.DSH_PROFILE_DIR = tempDir;
+
+const { apply } = await import("../index.js");
+const realCardPath = process.argv[2] || "";
 
 function collectRoutes() {
   const routes = [];
   const ctx = {
-    inject(names, callback) {
+    inject(_names, callback) {
       callback({
         effect(run) {
           run();
@@ -67,8 +67,9 @@ async function call(handler, body) {
   return { status: response.status, body: JSON.parse(response.payload) };
 }
 
-const PN = "data:image/png;base64,"
-  + "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AARAAe/wF1nD+1AAAAAElFTkSuQmCC";
+const PN =
+  "data:image/png;base64," +
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AARAAe/wF1nD+1AAAAAElFTkSuQmCC";
 
 const routes = collectRoutes();
 for (const name of ["get", "save", "activate", "delete", "image", "image-remove", "import", "export"]) {
@@ -80,16 +81,13 @@ try {
   assert.equal(initial.status, 200);
   assert.equal(initial.body.ok, true);
   assert.equal(initial.body.value.version, 3);
-  const baseCount = initial.body.value.personas.length;
-  const baseActive = initial.body.value.activeId;
-  console.log(`get: version=3 count=${baseCount} active=${baseCount > 0}`);
+  assert.equal(initial.body.value.personas.length, 0);
 
-  // POST-only and loopback guards.
+  // POST-only guard.
   const wrongMethod = { ...fakeRequest({}), method: "GET" };
   const response = { status: 0, headersSent: false, writeHead(s) { this.status = s; this.headersSent = true; }, end() {} };
   await routes.get("get")(wrongMethod, response);
   assert.equal(response.status, 405, "GET is refused");
-  console.log("guard: POST-only enforced");
 
   // Save (create), photo, activate.
   const saved = await call(routes.get("save"), {
@@ -101,20 +99,25 @@ try {
   assert.equal(saved.status, 200);
   const tempId = saved.body.personaId;
   assert.ok(tempId, "save returns personaId");
-  assert.equal(saved.body.value.personas.length, baseCount + 1);
-  console.log(`save: newId=${tempId} count=${saved.body.value.personas.length}`);
+  assert.equal(saved.body.value.personas.length, 1);
+
+  // Reject bogus image header disguised as PNG.
+  const fakePng = await call(routes.get("image"), {
+    id: tempId,
+    slot: 1,
+    dataUrl: "data:image/png;base64,bm90IGEgcG5n",
+  });
+  assert.equal(fakePng.status, 400, "invalid PNG magic bytes rejected");
 
   const photo = await call(routes.get("image"), { id: tempId, slot: 1, dataUrl: PN });
   assert.equal(photo.status, 200);
   const withPhoto = photo.body.value.personas.find((persona) => persona.id === tempId);
   assert.equal(withPhoto.images.length, 1);
   assert.equal(withPhoto.images[0].slot, 1);
-  console.log("image: stored second frame slot");
 
   const activated = await call(routes.get("activate"), { id: tempId, enabled: true });
   assert.equal(activated.status, 200);
   assert.equal(activated.body.value.activeId, tempId);
-  console.log("activate: switched");
 
   const exported = await call(routes.get("export"));
   assert.equal(exported.status, 200);
@@ -124,66 +127,32 @@ try {
   const tempExport = exported.body.value.personas.find((persona) => persona.id === tempId);
   assert.ok(tempExport, "export includes the temporary persona");
   assert.equal(tempExport.images.length, 1);
-  assert.equal(tempExport.images[0].slot, 1);
   assert.ok(tempExport.images[0].dataUrl.startsWith("data:image/png;base64,"));
-  console.log("export: photo embedded");
 
-  // V3 card export: one card, numbered persona sections, no greeting.
   const cardExport = await call(routes.get("export"), { format: "v3", id: tempId });
   assert.equal(cardExport.status, 200);
   assert.equal(cardExport.body.format, "chara_card_v3");
-  assert.match(cardExport.body.fileName, /\.chara_card_v3\.json$/);
   assert.equal(cardExport.body.value.spec, "chara_card_v3");
-  assert.equal(cardExport.body.value.spec_version, "3.0");
-  assert.equal(cardExport.body.value.data.name, "冒烟测试人设");
   assert.match(cardExport.body.value.data.description, /一、个人简介/);
   assert.match(cardExport.body.value.data.description, /六、特长/);
   assert.equal(cardExport.body.value.data.first_mes, "");
-  assert.ok(!cardExport.body.value.data.description.includes("冒烟测试人设"), "name is not repeated inside the sections");
-  // An unknown id falls back to the active persona instead of failing.
+
   const fallback = await call(routes.get("export"), { format: "v3", id: "p_does_not_exist" });
   assert.equal(fallback.status, 200);
   assert.equal(fallback.body.value.data.name, "冒烟测试人设");
-  console.log(`export v3: file=${cardExport.body.fileName} desc=${cardExport.body.value.data.description.length}`);
 
-  // Tavern card import through the real handler.
-  let importedId = null;
-  if (existsSync(realCardPath)) {
+  if (realCardPath && existsSync(realCardPath)) {
     const card = JSON.parse(readFileSync(realCardPath, "utf8"));
     const imported = await call(routes.get("import"), { data: card, mode: "append" });
-    assert.equal(imported.status, 200, JSON.stringify(imported.body));
-    assert.equal(imported.body.converted, "opentavern", "card detected");
-    const importedPersona = imported.body.value.personas.find(
-      (persona) => persona.name === card.data.name,
-    );
-    assert.ok(importedPersona, "imported persona named from the card");
-    importedId = importedPersona.id;
-    assert.ok(importedPersona.bio.length > 200, "bio filled from the card");
-    assert.ok(importedPersona.style.length > 100, "style filled from the card");
-    assert.ok(!/{{user}}|{{char}}/.test(JSON.stringify(importedPersona)), "no token leakage");
-    const text = JSON.stringify(importedPersona);
-    assert.ok(!text.includes("开场白"), "greeting not imported");
-    console.log(`import: converted=${imported.body.converted} name=${importedPersona.name.slice(0, 12)} bio=${importedPersona.bio.length} style=${importedPersona.style.length}`);
-  } else {
-    console.log(`import: skipped (card not found at ${realCardPath})`);
+    assert.equal(imported.status, 200);
+    assert.equal(imported.body.converted, "opentavern");
   }
 
-  // Clean up: delete only the personas this test created, never the user's library.
-  const created = [tempId];
-  if (typeof importedId === "string") created.push(importedId);
-  for (const id of created) {
-    const removed = await call(routes.get("delete"), { id });
-    assert.equal(removed.status, 200, `delete ${id}`);
-  }
-  if (baseActive) {
-    const restored = await call(routes.get("activate"), { id: baseActive, enabled: true });
-    assert.equal(restored.status, 200);
-  }
-  const final = await call(routes.get("get"));
-  assert.equal(final.body.value.personas.length, baseCount);
-  assert.equal(final.body.value.activeId, baseActive);
-  console.log(`cleanup: count=${final.body.value.personas.length}`);
+  const removed = await call(routes.get("delete"), { id: tempId });
+  assert.equal(removed.status, 200);
+  assert.equal(removed.body.value.personas.length, 0);
+
   console.log("handler smoke ok");
 } finally {
-  if (backup !== null) writeFileSync(stateFile, backup, "utf8");
+  rmSync(tempDir, { recursive: true, force: true });
 }

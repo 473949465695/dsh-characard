@@ -1,0 +1,18 @@
+{
+  "characard-persona": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ./antigravity/hook.mjs",
+        "timeout": 5
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./antigravity/hook.mjs",
+        "timeout": 5
+      }
+    ]
+  }
+}

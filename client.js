@@ -207,7 +207,7 @@ window.__ModuleLoader__.load({
 .dshp-ghost { background: transparent; }
 .dshp-danger { color: var(--dsw-alias-state-error-primary, #d03050); }
 .dshp-file { display: none; }
-.dshp-card { width: 100%; max-width: 560px; box-sizing: border-box; padding: 10px; border: 1px solid var(--dsw-alias-border-l1, #e3e3e3); border-radius: 12px; background: #ffffff; box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
+.dshp-card { width: 100%; max-width: 560px; box-sizing: border-box; padding: 10px; border: 1px solid var(--dsw-alias-border-l1, #e3e3e3); border-radius: 12px; background: var(--dsw-alias-bg-layer-2, #ffffff); box-shadow: 0 1px 2px rgba(0, 0, 0, .05); }
 .dshp-board { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .dshp-pager { display: flex; gap: 8px; align-items: center; margin: 10px 0 0; }
 .dshp-page-of { margin: 0 4px; color: var(--dsw-alias-label-secondary, #6b6b6b); font-variant-numeric: tabular-nums; }
@@ -552,12 +552,12 @@ window.__ModuleLoader__.load({
         };
       }, []);
 
-      const run = async (work) => {
+      const run = async (work, errorPrefix = "") => {
         setBusy(true);
         try {
           await work();
         } catch (error) {
-          setMessage({ kind: "error", text: String((error && error.message) || error) });
+          setMessage({ kind: "error", text: `${errorPrefix}${String((error && error.message) || error)}` });
         } finally {
           setBusy(false);
         }
@@ -570,7 +570,7 @@ window.__ModuleLoader__.load({
           adopt(payload);
           setEditing(null);
           setMessage({ kind: "ok", text: payload.active ? t("saved") : t("savedInactive") });
-        });
+        }, t("saveFailed"));
 
       const activate = (id, enabled) =>
         run(async () => {
@@ -588,7 +588,7 @@ window.__ModuleLoader__.load({
           if (page > lastPage) setPage(lastPage);
           setEditing(null);
           setMessage({ kind: "ok", text: t("deleted") });
-        });
+        }, t("deleteFailed"));
 
       const setPhoto = (id, file) => {
         if (!file) return Promise.resolve();

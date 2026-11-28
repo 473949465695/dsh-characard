@@ -1,10 +1,31 @@
 # dsh-characard
 
-DSH 人设插件：在 **设置 → 人设** 里维护一个**人设库**，可以保存多份人设、按需要启用其中一份；启用或修改后，模型从**下一条回复开始**就按这份人设作答（即时生效，无需重启）。
+**Antigravity & DeepSeek Harness (DSH) 双平台角色卡人设插件**：维护一个最多 32 份人设的角色库（2×2 分页角色框 + 角色照片 + Tavern V1/V2/V3 导入导出），同一时间启用一份人设，修改或切换后**下一条回复即生效，无需重启**。
 
-> A character-card manager for [DeepSeek Harness](https://github.com/deepseek-ai) (DSH): a paged 2×2 board of character frames in **Settings → Persona**, one active persona at a time, live system-prompt injection without a restart, plus Tavern/SillyTavern `chara_card_v1/v2/v3` import and `chara_card_v3` export.
+> A dual-host character-card manager for **Google Antigravity** (native Plugin + MCP App UI + Lifecycle Hooks) and **DeepSeek Harness (DSH)**: a paged 2×2 board of character frames, one active persona at a time, live system-prompt injection without a restart, optional in-character thinking, plus Tavern/SillyTavern `chara_card_v1/v2/v3` import and `chara_card_v3` export.
 
-## 安装（本地包）
+## 在 Antigravity 中安装与使用
+
+本仓库根目录即为标准 Antigravity 插件（含 `plugin.json`、`mcp_config.json`、`hooks.json`、`skills/persona/SKILL.md` 及自包含单文件 MCP App `antigravity/app.html`，**运行期零外部 npm 依赖**，只需本机安装 Node.js）：
+
+### 安装方式
+
+```powershell
+# 方式一：直接克隆到 Antigravity 全局插件目录（自动发现，无需额外注册）
+git clone https://github.com/473949465695/dsh-characard.git "$env:USERPROFILE\.gemini\config\plugins\dsh-characard"
+
+# 方式二：通过 Antigravity CLI 安装
+agy plugin install https://github.com/473949465695/dsh-characard
+```
+
+### 使用方式
+
+- **侧边栏 / 侧栏 `+` 菜单**：直接点 **人设 / Persona** 打开交互式 2×2 角色卡管理面板（自动适配 Antigravity 亮/暗主题，支持新建、编辑、传照片、一键启用/关闭、Tavern 角色卡导入与导出）。
+- **对话内直接操作**：直接说「打开人设面板」「列出我的人设」「切换到某某角色」「关闭当前人设」，Agent 会调用 `open_personas` / `list_personas` / `get_active_persona` / `switch_persona` 工具处理。
+- **即时生效与思考口吻**：通过 `SessionStart` + `PreInvocation` 生命周期 Hook 自动注入当前启用人设；会话中途切换、修改或关闭人设时，下一轮调用立即更新。开启「思考也用这个口吻」后，按第 1 步起每 8 步自动注入简短提醒。
+- **自动共享 DSH 人设库**：如果本机已存在 `~/.dsh/profiles/desktop/dsh-persona.json`，Antigravity 会自动共用该人设库与照片目录，无需重复导入；纯 Antigravity 用户则自动存储在插件专属的 `PLUGIN_DATA` 目录中（亦可通过环境变量 `CHARACARD_DATA_DIR` 指定）。
+
+## 在 DSH 中安装（本地包）
 
 在 DSH 里用插件管理器安装本目录（`plugin_manager` → `install_bundle`，路径指向本目录）。安装后：
 
@@ -140,10 +161,16 @@ DSH 插件格式的文件长这样（JSON，不是 txt）：
 
 ## 文件
 
-- `index.js` — Host 半边：人设库存储、启用状态、系统提示注入、照片落盘、回环桥
-- `client.js` — Client 半边：设置页「人设」（四格角色框 + 编辑页 + 导入导出）
-- `cordis.patch.yml` — bundle 插入条目（id `dsh-characard`）
-- `locale/{zh,en}.json` — 插件列表里的标题与说明
-- `icon.svg` — 插件列表里的图标（角色卡轮廓）
-- 设置导航里「人设」那一行的图标由 `client.js` 注册到 `settings.section.icon` 槽（id 必须是 `persona`，线条图标跟随主题文字色）；不注册时面板会退回默认的齿轮图标。
-- `test/` — 无浏览器冒烟测试：`node test/state-smoke.mjs`、`node test/render-smoke.mjs`、`test/bridge-check.ps1`（本机回环桥端到端，需要 DSH 正在运行）
+- `plugin.json` / `mcp_config.json` / `hooks.json` / `assets/logo.svg` / `skills/persona/SKILL.md` — Antigravity 原生插件清单、MCP App 服务配置、生命周期 Hook、图标与 Skill
+- `src/` — 共享核心模块（零外部依赖）：
+  - `src/schema.js` — 常量、字段上限、安全 ID 校验、图片魔数校验与状态规范化
+  - `src/store.js` — 跨平台数据目录解析、`stat` 缓存读取、原子写入、图片落盘与事务操作
+  - `src/prompt.js` — 系统提示拼装、思考口吻提醒与指纹变更检测
+  - `src/card.js` — Tavern `chara_card_v1/v2/v3` 与 DSH 备份格式转换
+- `antigravity/` — Antigravity 适配层：`hook.mjs`（会话与轮次注入）、`mcp-server.mjs`（零依赖 MCP App 服务端）、`app-src.js` / `build-app.mjs` / `app.html`（基于 `@modelcontextprotocol/ext-apps` 打包的单文件交互界面）
+- `index.js` — DSH Host 半边适配器（Cordis 服务与本机回环桥）
+- `client.js` — DSH Client 半边：设置页「人设」（四格角色框 + 编辑页 + 导入导出）
+- `cordis.patch.yml` — DSH bundle 插入条目（id `dsh-characard`）
+- `locale/{zh,en}.json` — DSH 插件列表里的标题与说明
+- `icon.svg` — DSH 插件列表里的图标（角色卡轮廓）
+- `test/` — 无浏览器冒烟测试：`npm test`（依次运行 `state-smoke.mjs`、`handler-smoke.mjs`、`render-smoke.mjs`、`antigravity-smoke.mjs`）与 `test/bridge-check.ps1`

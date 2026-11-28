@@ -1,10 +1,13 @@
 {
   "name": "dsh-characard",
-  "version": "1.8.1",
+  "version": "2.0.0",
   "private": true,
-  "description": "Character cards in DSH Settings: paged frames, one photo each, Tavern card import/export, one card active at a time, optional in-character thinking.",
+  "description": "Character cards plugin for Antigravity and DeepSeek Harness (DSH): paged 2x2 frames, photos, Tavern V1/V2/V3 import/export, live persona switching, optional in-character thinking.",
   "license": "MIT",
   "keywords": [
+    "antigravity",
+    "antigravity-plugin",
+    "mcp-app",
     "dsh",
     "deepseek-harness",
     "dsh-plugin",
@@ -19,6 +22,10 @@
     "url": "git+https://github.com/473949465695/dsh-characard.git"
   },
   "homepage": "https://github.com/473949465695/dsh-characard",
+  "scripts": {
+    "build:app": "node antigravity/build-app.mjs",
+    "test": "node test/state-smoke.mjs && node test/handler-smoke.mjs && node test/render-smoke.mjs && node test/antigravity-smoke.mjs"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -26,6 +33,15 @@
     "./icon": "./icon.svg"
   },
   "files": [
+    "plugin.json",
+    "mcp_config.json",
+    "hooks.json",
+    "assets/",
+    "skills/",
+    "src/",
+    "antigravity/hook.mjs",
+    "antigravity/mcp-server.mjs",
+    "antigravity/app.html",
     "index.js",
     "client.js",
     "cordis.patch.yml",
@@ -34,6 +50,10 @@
     "README.md",
     "LICENSE"
   ],
+  "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.0.0",
+    "esbuild": "^0.25.0"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
